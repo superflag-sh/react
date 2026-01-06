@@ -1,7 +1,7 @@
 {
   "name": "@superflag-sh/react",
-  "version": "0.3.1",
-  "description": "React SDK for Superflag feature flags",
+  "version": "0.4.0",
+  "description": "React SDK for Superflag feature flags (web only)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -22,8 +22,6 @@
   "keywords": [
     "feature-flags",
     "react",
-    "react-native",
-    "expo",
     "superflag"
   ],
   "author": "Superflag",
@@ -31,20 +29,14 @@
   "peerDependencies": {
     "react": ">=18"
   },
-  "peerDependenciesMeta": {
-    "@react-native-async-storage/async-storage": {
-      "optional": true
-    }
-  },
   "devDependencies": {
     "@types/node": "^25.0.3",
     "@types/react": "^18.2.0",
-    "bunup": "^0.7.0",
     "react": "^18.2.0",
     "typescript": "^5.0.0"
   },
   "scripts": {
-    "build": "rm -rf dist && bun build ./src/index.ts --outdir dist --format esm --external react --external @react-native-async-storage/async-storage && tsc --emitDeclarationOnly --declaration --outDir dist",
+    "build": "rm -rf dist && bun build ./src/index.ts --outdir dist --format esm --external react && tsc --emitDeclarationOnly --declaration --outDir dist",
     "dev": "tsc --watch",
     "typecheck": "tsc --noEmit"
   }

@@ -5,6 +5,7 @@ import type {
   CachedConfig,
   Flags,
   SuperflagClient,
+  StorageAdapter,
 } from "./types"
 import { getStorage, CACHE_KEY } from "./storage"
 import { initialState } from "./context"
@@ -15,12 +16,12 @@ const BASE_URL = "https://superflag.sh"
  * Creates a Superflag client that manages flag fetching and caching
  */
 export function createClient(config: ClientConfig): SuperflagClient {
-  const { clientKey, ttlSeconds: _ttlSeconds, onStateChange, storage: customStorage } = config
-  // ttlSeconds reserved for future periodic background refresh
+  const { clientKey, onStateChange, storage: customStorage } = config
 
   let state: SuperflagState = { ...initialState }
   let destroyed = false
   let fetchController: AbortController | null = null
+  let storage: StorageAdapter | null = null
 
   function setState(updates: Partial<SuperflagState>): void {
     if (destroyed) return
@@ -28,18 +29,18 @@ export function createClient(config: ClientConfig): SuperflagClient {
     onStateChange(state)
   }
 
-  async function resolveStorage() {
-    return customStorage ?? await getStorage()
+  function resolveStorage(): StorageAdapter {
+    if (storage) return storage
+    storage = customStorage ?? getStorage()
+    return storage
   }
 
   async function loadFromCache(): Promise<CachedConfig | null> {
     try {
-      const storage = await resolveStorage()
-      const cached = await storage.getItem(CACHE_KEY)
+      const s = resolveStorage()
+      const cached = await s.getItem(CACHE_KEY)
       if (!cached) return null
-
-      const parsed = JSON.parse(cached) as CachedConfig
-      return parsed
+      return JSON.parse(cached) as CachedConfig
     } catch {
       return null
     }
@@ -47,14 +48,14 @@ export function createClient(config: ClientConfig): SuperflagClient {
 
   async function saveToCache(flags: Flags, version: number, etag: string): Promise<void> {
     try {
-      const storage = await resolveStorage()
+      const s = resolveStorage()
       const cache: CachedConfig = {
         flags,
         version,
         etag,
         fetchedAt: Date.now(),
       }
-      await storage.setItem(CACHE_KEY, JSON.stringify(cache))
+      await s.setItem(CACHE_KEY, JSON.stringify(cache))
     } catch {
       // Ignore cache save errors
     }
@@ -98,7 +99,6 @@ export function createClient(config: ClientConfig): SuperflagClient {
           lastFetchedAt: Date.now(),
           error: null,
         })
-        // Update cache fetchedAt
         if (state.version !== null && state.etag) {
           await saveToCache(state.flags, state.version, state.etag)
         }
@@ -107,7 +107,7 @@ export function createClient(config: ClientConfig): SuperflagClient {
 
       // Handle 401 Unauthorized
       if (response.status === 401) {
-        const body = await response.json().catch(() => ({}))
+        const body = await response.json().catch(() => ({})) as { error?: string }
         setState({
           status: "error",
           error: body.error || "Invalid or unauthorized client key",
@@ -168,23 +168,29 @@ export function createClient(config: ClientConfig): SuperflagClient {
   async function initialize(): Promise<void> {
     if (destroyed) return
 
-    // Load from cache first
-    const cached = await loadFromCache()
+    try {
+      // Load from cache first
+      const cached = await loadFromCache()
 
-    if (cached) {
-      // Show cached data immediately
+      if (cached) {
+        setState({
+          flags: cached.flags,
+          status: "ready",
+          version: cached.version,
+          etag: cached.etag,
+          lastFetchedAt: cached.fetchedAt,
+        })
+      }
+
+      // Always fetch on app start
+      await fetchConfig()
+    } catch {
+      // Initialization failed but don't crash
       setState({
-        flags: cached.flags,
-        status: "ready",
-        version: cached.version,
-        etag: cached.etag,
-        lastFetchedAt: cached.fetchedAt,
+        status: "error",
+        error: "Failed to initialize",
       })
     }
-
-    // Always fetch on app start - ETag ensures we only download if changed
-    // This guarantees users see fresh values on refresh
-    await fetchConfig()
   }
 
   function destroy(): void {
@@ -196,8 +202,8 @@ export function createClient(config: ClientConfig): SuperflagClient {
   }
 
   return {
-    initialize: initialize,
-    destroy: destroy,
+    initialize,
+    destroy,
     refetch: fetchConfig,
   }
 }
