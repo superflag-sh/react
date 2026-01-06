@@ -10,9 +10,6 @@ npm install @superflag-sh/react
 
 # bun
 bun add @superflag-sh/react
-
-# For React Native, also install:
-npm install @react-native-async-storage/async-storage
 ```
 
 ## Quick Start
@@ -48,6 +45,7 @@ Wrap your app with the provider to enable feature flags.
 <SuperflagProvider
   clientKey="pub_prod_abc123"  // Required (or set EXPO_PUBLIC_SUPERFLAG_CLIENT_KEY)
   ttlSeconds={60}              // Optional, default 60
+  storage={customAdapter}      // Optional, custom storage adapter
 >
   <App />
 </SuperflagProvider>
@@ -79,11 +77,37 @@ The SDK will automatically use `EXPO_PUBLIC_SUPERFLAG_CLIENT_KEY` if no `clientK
 
 ## Storage
 
-The SDK automatically detects the environment:
+You can provide a custom storage adapter via the `storage` prop. This is useful for React Native apps that want to use expo-sqlite, MMKV, or any other storage solution.
+
+```tsx
+import * as SQLite from "expo-sqlite"
+
+const sqliteStorage = {
+  getItem: (key: string) => SQLite.getItemSync(key),
+  setItem: (key: string, value: string) => SQLite.setItemSync(key, value),
+  removeItem: (key: string) => SQLite.deleteItemSync(key),
+}
+
+<SuperflagProvider clientKey="pub_..." storage={sqliteStorage}>
+```
+
+### StorageAdapter Interface
+
+```typescript
+interface StorageAdapter {
+  getItem(key: string): Promise<string | null> | string | null
+  setItem(key: string, value: string): Promise<void> | void
+  removeItem(key: string): Promise<void> | void
+}
+```
+
+### Default Behavior
+
+If no `storage` prop is provided, the SDK auto-detects:
 
 - **Web**: Uses `localStorage`
-- **React Native**: Uses `@react-native-async-storage/async-storage`
-- **Fallback**: In-memory (does not persist)
+- **React Native**: Uses `@react-native-async-storage/async-storage` if installed
+- **Fallback**: In-memory storage (does not persist between sessions)
 
 ## Caching
 
