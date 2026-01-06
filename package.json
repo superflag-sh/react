@@ -1,6 +1,6 @@
 {
   "name": "@superflag-sh/react",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "React SDK for Superflag feature flags",
   "type": "module",
   "main": "./dist/index.js",
