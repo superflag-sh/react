@@ -17,6 +17,7 @@ export function SuperflagProvider({
   clientKey: propKey,
   ttlSeconds = 60,
   storage,
+  userId,
   children,
 }: SuperflagProviderProps): JSX.Element {
   // Try to get key from props or environment
@@ -41,6 +42,7 @@ export function SuperflagProvider({
         clientKey,
         ttlSeconds,
         storage,
+        userId,
         onStateChange: setState,
       })
 
@@ -58,7 +60,7 @@ export function SuperflagProvider({
         error: "Failed to create client",
       })
     }
-  }, [clientKey, ttlSeconds, storage])
+  }, [clientKey, ttlSeconds, storage, userId])
 
   return (
     <SuperflagContext.Provider value={state}>

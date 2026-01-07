@@ -1,6 +1,7 @@
 import { useContext } from "react"
 import { SuperflagContext } from "./context"
 import type { SuperflagStatus } from "./types"
+import { evaluateFlag } from "./evaluation"
 
 /**
  * Hook to get a single flag value.
@@ -28,7 +29,7 @@ export function useFlag<T = unknown>(name: string, fallback?: T): T | undefined 
     return fallback
   }
 
-  return flag.value as T
+  return evaluateFlag<T>(flag, name, ctx.userId)
 }
 
 /**

@@ -9,6 +9,14 @@ export type FlagType = "bool" | "string" | "number" | "json"
 export interface FlagValue {
   type: FlagType
   value: boolean | string | number | object
+  rollout?: {
+    percentage: number
+  }
+  variants?: Array<{
+    value: boolean | string | number | object
+    weight: number
+    name?: string
+  }>
 }
 
 /**
@@ -31,6 +39,7 @@ export interface SuperflagState {
   etag: string | null
   lastFetchedAt: number | null
   error: string | null
+  userId?: string
 }
 
 /**
@@ -52,6 +61,11 @@ export interface SuperflagProviderProps {
    * Use this to integrate with expo-sqlite, MMKV, or any other storage.
    */
   storage?: StorageAdapter
+  /**
+   * User ID for rollout/variant bucketing.
+   * Required for flags with rollout percentages or A/B test variants.
+   */
+  userId?: string
   /**
    * React children
    */
@@ -100,6 +114,7 @@ export interface ClientConfig {
   ttlSeconds: number
   onStateChange: (state: SuperflagState) => void
   storage?: StorageAdapter
+  userId?: string
 }
 
 /**
