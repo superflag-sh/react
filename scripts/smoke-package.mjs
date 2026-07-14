@@ -5,7 +5,9 @@ import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
-const coreRoot = resolve(root, "../superflag-core")
+const coreRoot = process.env.SUPERFLAG_CORE_DIR
+  ? resolve(root, process.env.SUPERFLAG_CORE_DIR)
+  : join(root, "node_modules", "@superflag-sh", "core")
 const temp = mkdtempSync(join(tmpdir(), "superflag-react-smoke-"))
 const tarball = join(temp, "package.tgz")
 const coreTarball = join(temp, "core.tgz")

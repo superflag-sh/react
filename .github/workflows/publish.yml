@@ -12,11 +12,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Checkout core SDK
-        uses: actions/checkout@v6
-        with:
-          repository: superflag-sh/core
-          path: core-peer
       - name: Checkout React Native cache peer
         uses: actions/checkout@v6
         with:
@@ -33,7 +28,6 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run release:check
         env:
-          SUPERFLAG_CORE_DIR: core-peer
           SUPERFLAG_CACHE_PEER_DIR: cache-peer
       - run: mkdir package-artifact && npm pack --ignore-scripts --pack-destination package-artifact
       - uses: actions/upload-artifact@v4
