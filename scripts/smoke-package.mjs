@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process"
-import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -17,11 +17,47 @@ function run(command, args, cwd = root) {
   return execFileSync(command, args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
 }
 
-function linkDependency(name) {
-  const source = join(root, "node_modules", ...name.split("/"))
-  const destination = join(temp, "node_modules", ...name.split("/"))
-  mkdirSync(dirname(destination), { recursive: true })
-  if (!existsSync(destination)) symlinkSync(source, destination, "junction")
+function verifyDeclarations(label, reactVersion, reactTypesVersion) {
+  const fixture = join(temp, `types-react-${label}`)
+  mkdirSync(fixture)
+  writeFileSync(join(fixture, "package.json"), JSON.stringify({ private: true, type: "module" }))
+  run(
+    "npm",
+    [
+      "install",
+      "--ignore-scripts",
+      "--legacy-peer-deps",
+      "--no-package-lock",
+      "--no-audit",
+      "--no-fund",
+      "--cache",
+      join(temp, ".npm-cache"),
+      `react@${reactVersion}`,
+      `@types/react@${reactTypesVersion}`,
+      coreTarball,
+      tarball,
+    ],
+    fixture,
+  )
+  writeFileSync(
+    join(fixture, "consumer.tsx"),
+    'import { SuperflagProvider, createTypedHooks, useFlag, type StorageAdapter } from "@superflag-sh/react";\n' +
+      'declare const storage: StorageAdapter;\n' +
+      'interface FlagValues { enabled: boolean }\n' +
+      'const typed = createTypedHooks<FlagValues>();\n' +
+      'const Child = () => <span>{String(useFlag("enabled", false))}</span>;\n' +
+      'const TypedChild = () => { const client = typed.useClient(); return <span>{String(typed.useFlag("enabled", client.getFlag("enabled", false)))}</span> };\n' +
+      'export const App = () => <SuperflagProvider clientKey="pub_prod_smoke" targetingKey="user-1" storage={storage}><Child /><TypedChild /></SuperflagProvider>;\n',
+  )
+  run(
+    join(root, "node_modules", ".bin", "tsc"),
+    ["--noEmit", "--strict", "--jsx", "react-jsx", "--target", "ES2019", "--module", "ESNext", "--moduleResolution", "Bundler", "consumer.tsx"],
+    fixture,
+  )
+  for (const name of ["react", "core"]) {
+    const installed = realpathSync(join(fixture, "node_modules", "@superflag-sh", name))
+    if (!installed.startsWith(realpathSync(fixture))) throw new Error(`${name} resolved outside the packed consumer fixture`)
+  }
 }
 
 try {
@@ -47,11 +83,9 @@ try {
   writeFileSync(join(temp, "package.json"), JSON.stringify({ private: true, type: "module" }))
   run(
     "npm",
-    ["install", "--ignore-scripts", "--legacy-peer-deps", "--no-package-lock", "--no-audit", "--no-fund", "--cache", join(temp, ".npm-cache"), coreTarball, tarball],
+    ["install", "--ignore-scripts", "--legacy-peer-deps", "--no-package-lock", "--no-audit", "--no-fund", "--cache", join(temp, ".npm-cache"), "react@19.2.0", coreTarball, tarball],
     temp,
   )
-  linkDependency("react")
-  linkDependency("@types/react")
 
   writeFileSync(
     join(temp, "smoke-esm.mjs"),
@@ -63,24 +97,10 @@ try {
     'const { SuperflagProvider, createTypedHooks, useFlag, useFlagDetails, useFlags } = require("@superflag-sh/react");\n' +
       'if (![SuperflagProvider, createTypedHooks, useFlag, useFlagDetails, useFlags].every((value) => typeof value === "function")) throw new Error("CJS exports missing");\n',
   )
-  writeFileSync(
-    join(temp, "consumer.tsx"),
-    'import { SuperflagProvider, createTypedHooks, useFlag, type StorageAdapter } from "@superflag-sh/react";\n' +
-      'declare const storage: StorageAdapter;\n' +
-      'interface FlagValues { enabled: boolean }\n' +
-      'const typed = createTypedHooks<FlagValues>();\n' +
-      'const Child = () => <span>{String(useFlag("enabled", false))}</span>;\n' +
-    'const TypedChild = () => { const client = typed.useClient(); return <span>{String(typed.useFlag("enabled", client.getFlag("enabled", false)))}</span> };\n' +
-      'export const App = () => <SuperflagProvider clientKey="pub_prod_smoke" targetingKey="user-1" storage={storage}><Child /><TypedChild /></SuperflagProvider>;\n',
-  )
-
   run("node", ["smoke-esm.mjs"], temp)
   run("node", ["smoke-cjs.cjs"], temp)
-  run(
-    join(root, "node_modules", ".bin", "tsc"),
-    ["--noEmit", "--skipLibCheck", "--jsx", "react-jsx", "--target", "ES2019", "--module", "NodeNext", "--moduleResolution", "NodeNext", "consumer.tsx"],
-    temp,
-  )
+  verifyDeclarations("18", "18.3.1", "18.3.27")
+  verifyDeclarations("19", "19.2.0", "19.2.17")
 
   const manifest = JSON.parse(readFileSync(join(temp, "node_modules", "@superflag-sh", "react", "package.json"), "utf8"))
   if (manifest.dependencies?.["@superflag-sh/core"] !== "^0.1.0") {
@@ -92,7 +112,7 @@ try {
   console.log(`tarball: ${entries.length} files, source-only entries: 0`)
   console.log(`runtime imports: ESM and CommonJS ok (${manifest.name}@${manifest.version})`)
   console.log("core dependency: ^0.1.0 manifest range, local packed resolution ok")
-  console.log("consumer declarations: NodeNext TSX ok")
+  console.log("consumer declarations: React 18 and React 19 bundler TSX ok (skipLibCheck disabled)")
 } finally {
   rmSync(temp, { recursive: true, force: true })
 }

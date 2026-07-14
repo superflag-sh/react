@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import type { ReactElement } from "react"
 import { createEvaluator } from "@superflag-sh/core"
 import type {
   SuperflagEvaluationDetails,
@@ -34,7 +35,7 @@ export function SuperflagProvider({
   onEvaluation,
   onExposure,
   children,
-}: SuperflagProviderProps): JSX.Element {
+}: SuperflagProviderProps): ReactElement {
   const clientKey =
     propKey ??
     (typeof process !== "undefined"

@@ -1,6 +1,6 @@
 {
   "name": "@superflag-sh/react",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "React SDK for Superflag feature flags (web only)",
   "type": "module",
   "main": "./dist/cjs/index.js",
@@ -53,6 +53,7 @@
     "test:watch": "bun test --watch ./src/__tests__",
     "check:cache-drift": "node scripts/check-cache-drift.mjs",
     "smoke:package": "node scripts/smoke-package.mjs",
+    "smoke:registry": "node scripts/smoke-registry.mjs",
     "release:check": "bun run test && bun run typecheck && bun run check:cache-drift && bun run build && bun run smoke:package",
     "prepack": "bun run build",
     "prepublishOnly": "bun run release:check"
