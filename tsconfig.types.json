@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "declarationMap": false,
+    "emitDeclarationOnly": true,
+    "isolatedDeclarations": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "outDir": "dist/types"
+  },
+  "exclude": ["node_modules", "dist", "src/__tests__"]
+}

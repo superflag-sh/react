@@ -1,117 +1,166 @@
 # @superflag-sh/react
 
-React SDK for [Superflag](https://superflag.sh) feature flags. Works with React, React Native, and Expo.
+React/web adapter for Superflag feature flags. Evaluation, validation, targeting, and generated flag types come from `@superflag-sh/core`; this package owns React hooks plus browser fetch, cache, and lifecycle behavior.
 
 ## Installation
 
 ```bash
-# npm
 npm install @superflag-sh/react
-
-# bun
+# or
 bun add @superflag-sh/react
 ```
 
-## Quick Start
+`@superflag-sh/core` is installed as a normal runtime dependency.
+
+## Quick start
 
 ```tsx
-import { SuperflagProvider, useFlag, useFlags } from "@superflag-sh/react"
+import { SuperflagProvider, useBooleanFlag, useFlags } from "@superflag-sh/react"
 
 function App() {
   return (
-    <SuperflagProvider clientKey="pub_prod_abc123">
-      <MyComponent />
+    <SuperflagProvider
+      clientKey="pub_prod_abc123"
+      targetingKey="user-123"
+      attributes={{ plan: "pro", country: "US" }}
+      ttlSeconds={60}
+      maxStaleAgeSeconds={86_400}
+    >
+      <Checkout />
     </SuperflagProvider>
   )
 }
 
-function MyComponent() {
-  const darkMode = useFlag("dark-mode", false)
-  const { ready, loading, status } = useFlags()
+function Checkout() {
+  const enabled = useBooleanFlag("checkout", false)
+  const { ready, stale, source, age, refresh } = useFlags()
 
-  if (loading) return <Spinner />
-
-  return <div>{darkMode ? "Dark" : "Light"} mode</div>
+  if (!ready) return null
+  return (
+    <button disabled={!enabled || stale} onClick={() => void refresh()}>
+      Checkout ({source}, {age?.toFixed(1)}s old)
+    </button>
+  )
 }
 ```
 
-## API
+`userId` remains supported as a deprecated alias for `targetingKey`. New integrations should pass `targetingKey` and optional JSON-compatible `attributes`. An absent identity always fails closed to the typed fallback; it never expands a rollout.
 
-### `<SuperflagProvider>`
-
-Wrap your app with the provider to enable feature flags.
+## Provider
 
 ```tsx
 <SuperflagProvider
-  clientKey="pub_prod_abc123"  // Required (or set EXPO_PUBLIC_SUPERFLAG_CLIENT_KEY)
-  ttlSeconds={60}              // Optional, default 60
-  storage={customAdapter}      // Optional, custom storage adapter
+  clientKey="pub_prod_abc123"
+  configUrl="https://superflag.sh/api/v1/public-config"
+  targetingKey="user-123"
+  attributes={{ plan: "pro" }}
+  ttlSeconds={60}                 // fresh lifetime
+  maxStaleAgeSeconds={86_400}     // hard serving limit; default 24 hours
+  maxRetries={2}                  // retries after the initial request
+  retryBaseDelayMs={250}
+  retryMaxDelayMs={5_000}
+  storage={customStorage}
+  onReady={(info) => {}}
+  onDiagnostic={(diagnostic) => {}}
+  onEvaluation={(event) => {}}
+  onExposure={(event) => {}}
 >
   <App />
 </SuperflagProvider>
 ```
 
-### `useFlag(name, fallback?)`
+The provider serves an identity-bound cache immediately when it is within `maxStaleAgeSeconds`, then revalidates it with an ETag. Once `ttlSeconds` elapses, the state is truthfully marked stale while revalidation runs. Successful `304` responses renew `fetchedAt`; failures preserve cached values only until the configured hard stale limit.
 
-Get a single flag value.
+Refreshes are deduplicated, retry transient network/408/425/429/5xx failures with bounded exponential backoff, and run automatically on TTL expiry, `visibilitychange` to visible, and browser `online`. Unmount removes timers/listeners and aborts in-flight work.
 
-```tsx
-const darkMode = useFlag("dark-mode", false)
-const maxUploads = useFlag<number>("max-uploads", 5)
-const config = useFlag<{ theme: string }>("app-config")
-```
+Consumer callbacks are isolated from SDK behavior. Evaluation and exposure events contain no targeting key, attributes, or client key.
 
-### `useFlags()`
+## Flag hooks
 
-Get the SDK state.
+`useFlag` is preserved for compatibility:
 
 ```tsx
-const { ready, loading, status } = useFlags()
-
-// status: "idle" | "loading" | "ready" | "error" | "rate-limited"
+const enabled = useFlag("checkout", false)
+const title = useFlag("checkout-title", "Buy now")
 ```
 
-## Environment Variables
+Prefer the explicitly typed hooks for new code:
 
-The SDK will automatically use `EXPO_PUBLIC_SUPERFLAG_CLIENT_KEY` if no `clientKey` prop is provided.
+```tsx
+const enabled = useBooleanFlag("checkout", false)
+const title = useStringFlag("checkout-title", "Buy now")
+const limit = useNumberFlag("upload-limit", 5)
+const layout = useObjectFlag("layout", { density: "comfortable" })
+```
+
+Every value hook has a detail counterpart: `useFlagDetails`, `useBooleanFlagDetails`, `useStringFlagDetails`, `useNumberFlagDetails`, and `useObjectFlagDetails`.
+
+```tsx
+const detail = useBooleanFlagDetails("checkout", false)
+// {
+//   value, variation, reason, ruleId, segmentIds,
+//   source, configVersion, errorCode, errorMessage, timestamp, ...
+// }
+```
+
+Wrong remote types return the supplied typed fallback and emit a `TYPE_MISMATCH` diagnostic.
+
+### Generated flag maps
+
+Bind the value map generated by `@superflag-sh/core` once to reject unknown keys and incorrect fallback types:
+
+```tsx
+import { createTypedHooks } from "@superflag-sh/react"
+import type { SuperflagFlagValues } from "./superflag.generated"
+
+const flags = createTypedHooks<SuperflagFlagValues>()
+
+function Checkout() {
+  const enabled = flags.useFlag("checkout", false)
+  const detail = flags.useFlagDetails("checkout", false)
+  return enabled ? <span>{detail.reason}</span> : null
+}
+```
+
+`createTypedHooks<typeof config>()` also accepts a literal core `FlagConfig`.
+The returned `useClient()` hook provides typed imperative `getFlag`,
+`getFlagDetails`, and `refresh` methods for event handlers. An unbound
+`useSuperflagClient<SuperflagFlagValues>()` export is also available.
+
+## State and refresh
+
+`useFlags()` exposes:
+
+- `status`: `idle | loading | refreshing | ready | stale | error | rate-limited`
+- `source`: `cache | network | default`
+- `error`, `fetchedAt`, `configVersion`, `age`, and `stale`
+- compatibility aliases `lastFetchedAt` and `version`
+- `ready`, `loading`, and the deduplicated async `refresh()` function
+- `appId` and `environment` for the validated cache identity
+
+`source: "default"` means no remote/cache config is currently being served. Safety-sensitive UI should gate on `ready` and may additionally reject `stale` data.
+
+## Core config and legacy payloads
+
+New responses use the versioned `FlagConfig` from `@superflag-sh/core`, including named variations, explicit enabled/off/fallthrough behavior, source identity, and config version. The SDK validates every network and cache boundary before evaluation.
+
+For migration, the current legacy `{ type, value, rollout, variants }` response is converted only at the boundary with core's `migrateLegacyFlags` adapter. Evaluation itself is never duplicated in this package.
 
 ## Storage
 
-You can provide a custom storage adapter via the `storage` prop. This is useful for React Native apps that want to use expo-sqlite, MMKV, or any other storage solution.
-
-```tsx
-import * as SQLite from "expo-sqlite"
-
-const sqliteStorage = {
-  getItem: (key: string) => SQLite.getItemSync(key),
-  setItem: (key: string, value: string) => SQLite.setItemSync(key, value),
-  removeItem: (key: string) => SQLite.deleteItemSync(key),
-}
-
-<SuperflagProvider clientKey="pub_..." storage={sqliteStorage}>
-```
-
-### StorageAdapter Interface
-
-```typescript
+```ts
 interface StorageAdapter {
-  getItem(key: string): Promise<string | null> | string | null
-  setItem(key: string, value: string): Promise<void> | void
-  removeItem(key: string): Promise<void> | void
+  getItem(key: string): Promise<string | null>
+  setItem(key: string, value: string): Promise<void>
+  removeItem(key: string): Promise<void>
 }
 ```
 
-### Default Behavior
+The default adapter uses `localStorage` when available and otherwise falls back to session memory. Cache entries are schema-versioned and partitioned by endpoint plus a SHA-256 client-key fingerprint; raw client keys are never persisted. App/environment identity must match before an ETag or cached config can be reused.
 
-If no `storage` prop is provided, the SDK auto-detects:
+## Package targets
 
-- **Web**: Uses `localStorage`
-- **React Native**: Uses `@react-native-async-storage/async-storage` if installed
-- **Fallback**: In-memory storage (does not persist between sessions)
-
-## Caching
-
-Flags are cached locally and loaded instantly on startup. The SDK refetches when the cache is stale (based on `ttlSeconds`). ETag support ensures minimal bandwidth usage.
+The package ships browser ESM, CommonJS, and one declaration tree. Release checks run core conformance vectors, lifecycle/cache tests, type checking, the shared cache-drift gate, and packed-tarball ESM/CommonJS/NodeNext consumer smoke tests.
 
 ## License
 

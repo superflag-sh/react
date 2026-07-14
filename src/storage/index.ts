@@ -1,14 +1,9 @@
-import type { StorageAdapter } from "../types"
-import { memoryStorage } from "./memory"
-import { webStorage } from "./web"
+import type { StorageAdapter } from "../types.js"
+import { memoryStorage } from "./memory.js"
+import { webStorage } from "./web.js"
 
 export type { StorageAdapter }
 export { memoryStorage, webStorage }
-
-/**
- * Cache key used for storing config
- */
-export const CACHE_KEY = "superflag:cache:v1"
 
 let resolvedStorage: StorageAdapter | null = null
 

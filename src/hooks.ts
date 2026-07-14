@@ -1,64 +1,148 @@
-import { useContext } from "react"
-import { SuperflagContext } from "./context"
-import type { SuperflagStatus } from "./types"
-import { evaluateFlag } from "./evaluation"
+import { useContext, useEffect, useMemo } from "react"
+import { SuperflagContext } from "./context.js"
+import type {
+  ObjectFlagValue,
+  SuperflagEvaluationDetails,
+  SuperflagState,
+  TypedFlagValues,
+  TypedSuperflagClient,
+  TypedSuperflagHooks,
+} from "./types.js"
 
-/**
- * Hook to get a single flag value.
- *
- * @param name - The flag name
- * @param fallback - Optional fallback value if flag is not found
- * @returns The flag value or fallback
- *
- * @example
- * ```tsx
- * const darkMode = useFlag("dark-mode", false)
- * const maxUploads = useFlag<number>("max-uploads", 5)
- * ```
- */
-export function useFlag<T = unknown>(name: string, fallback?: T): T | undefined {
-  const ctx = useContext(SuperflagContext)
+function useEvaluation<T>(
+  flagKey: string,
+  fallback: T | undefined,
+  exposed: boolean,
+): SuperflagEvaluationDetails<T | undefined> {
+  const context = useContext(SuperflagContext)
+  if (!context) throw new Error("Superflag hooks must be used within a SuperflagProvider")
 
-  if (!ctx) {
-    throw new Error("useFlag must be used within a SuperflagProvider")
-  }
-
-  const flag = ctx.flags[name]
-
-  if (flag === undefined) {
-    return fallback
-  }
-
-  return evaluateFlag<T>(flag, name, ctx.userId)
+  const details = useMemo(
+    () => context.evaluate(flagKey, fallback),
+    [context.evaluate, flagKey, fallback],
+  )
+  useEffect(() => {
+    context.recordEvaluation(details, exposed)
+  }, [context.recordEvaluation, details, exposed])
+  return details
 }
 
-/**
- * Hook to get the SDK state.
- *
- * @returns Object with ready, loading, and status properties
- *
- * @example
- * ```tsx
- * const { ready, loading, status } = useFlags()
- *
- * if (loading) return <Spinner />
- * if (status === "error") return <ErrorMessage />
- * ```
- */
-export function useFlags(): {
-  ready: boolean
-  loading: boolean
-  status: SuperflagStatus
-} {
-  const ctx = useContext(SuperflagContext)
+/** Backwards-compatible value hook. Missing fallbacks resolve to the configured off variation. */
+export function useFlag<T = unknown>(flagKey: string, fallback?: T): T | undefined {
+  return useEvaluation(flagKey, fallback, true).value
+}
 
-  if (!ctx) {
-    throw new Error("useFlags must be used within a SuperflagProvider")
-  }
+export function useFlagDetails<T>(
+  flagKey: string,
+  fallback: T,
+): SuperflagEvaluationDetails<T> {
+  return useEvaluation(flagKey, fallback, false) as SuperflagEvaluationDetails<T>
+}
 
+export function useBooleanFlag(flagKey: string, fallback: boolean): boolean {
+  return useEvaluation(flagKey, fallback, true).value as boolean
+}
+
+export function useStringFlag(flagKey: string, fallback: string): string {
+  return useEvaluation(flagKey, fallback, true).value as string
+}
+
+export function useNumberFlag(flagKey: string, fallback: number): number {
+  return useEvaluation(flagKey, fallback, true).value as number
+}
+
+export function useObjectFlag<T extends ObjectFlagValue>(flagKey: string, fallback: T): T {
+  return useEvaluation(flagKey, fallback, true).value as T
+}
+
+export function useBooleanFlagDetails(
+  flagKey: string,
+  fallback: boolean,
+): SuperflagEvaluationDetails<boolean> {
+  return useFlagDetails(flagKey, fallback)
+}
+
+export function useStringFlagDetails(
+  flagKey: string,
+  fallback: string,
+): SuperflagEvaluationDetails<string> {
+  return useFlagDetails(flagKey, fallback)
+}
+
+export function useNumberFlagDetails(
+  flagKey: string,
+  fallback: number,
+): SuperflagEvaluationDetails<number> {
+  return useFlagDetails(flagKey, fallback)
+}
+
+export function useObjectFlagDetails<T extends ObjectFlagValue>(
+  flagKey: string,
+  fallback: T,
+): SuperflagEvaluationDetails<T> {
+  return useFlagDetails(flagKey, fallback)
+}
+
+export function useFlags(): SuperflagState & { ready: boolean; loading: boolean } {
+  const context = useContext(SuperflagContext)
+  if (!context) throw new Error("useFlags must be used within a SuperflagProvider")
   return {
-    ready: ctx.status === "ready",
-    loading: ctx.status === "loading",
-    status: ctx.status,
+    ...context,
+    ready: context.config !== null && context.status !== "error",
+    loading: context.status === "idle" || context.status === "loading",
+  }
+}
+
+/** Imperative evaluation API for event handlers and non-render callbacks. */
+export function useSuperflagClient<
+  T extends object = Record<string, unknown>,
+>(): TypedSuperflagClient<T> {
+  const context = useContext(SuperflagContext)
+  if (!context) throw new Error("useSuperflagClient must be used within a SuperflagProvider")
+
+  return useMemo(
+    () => ({
+      getFlag<K extends Extract<keyof TypedFlagValues<T>, string>>(
+        flagKey: K,
+        fallback: TypedFlagValues<T>[K],
+      ): TypedFlagValues<T>[K] {
+        const details = context.evaluate(flagKey, fallback)
+        context.recordEvaluation(details, true)
+        return details.value as TypedFlagValues<T>[K]
+      },
+      getFlagDetails<K extends Extract<keyof TypedFlagValues<T>, string>>(
+        flagKey: K,
+        fallback: TypedFlagValues<T>[K],
+      ): SuperflagEvaluationDetails<TypedFlagValues<T>[K]> {
+        const details = context.evaluate(flagKey, fallback)
+        context.recordEvaluation(details, false)
+        return details as SuperflagEvaluationDetails<TypedFlagValues<T>[K]>
+      },
+      refresh: context.refresh,
+    }),
+    [context.evaluate, context.recordEvaluation, context.refresh],
+  )
+}
+
+/** Bind generated/core config types once, then use key/value-safe hooks throughout an app. */
+export function createTypedHooks<const T extends object>(): TypedSuperflagHooks<T> {
+  return {
+    useFlag<K extends Extract<keyof TypedFlagValues<T>, string>>(
+      flagKey: K,
+      fallback: TypedFlagValues<T>[K],
+    ) {
+      return useFlag(flagKey, fallback) as TypedFlagValues<T>[K]
+    },
+    useFlagDetails<K extends Extract<keyof TypedFlagValues<T>, string>>(
+      flagKey: K,
+      fallback: TypedFlagValues<T>[K],
+    ) {
+      return useFlagDetails(flagKey, fallback) as SuperflagEvaluationDetails<
+        TypedFlagValues<T>[K]
+      >
+    },
+    useClient() {
+      return useSuperflagClient<T>()
+    },
   }
 }

@@ -1,14 +1,18 @@
 {
   "name": "@superflag-sh/react",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "React SDK for Superflag feature flags (web only)",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/types/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "types": "./dist/types/index.d.ts",
+      "browser": "./dist/esm/index.js",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js",
+      "default": "./dist/esm/index.js"
     }
   },
   "files": [
@@ -17,7 +21,10 @@
   "sideEffects": false,
   "repository": {
     "type": "git",
-    "url": "https://github.com/superflag-sh/react"
+    "url": "git+https://github.com/superflag-sh/react.git"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "keywords": [
     "feature-flags",
@@ -29,6 +36,9 @@
   "peerDependencies": {
     "react": ">=18"
   },
+  "dependencies": {
+    "@superflag-sh/core": "^0.1.0"
+  },
   "devDependencies": {
     "@types/node": "^25.0.3",
     "@types/react": "^18.2.0",
@@ -36,10 +46,15 @@
     "typescript": "^5.0.0"
   },
   "scripts": {
-    "build": "rm -rf dist && bun build ./src/index.ts --outdir dist --format esm --external react && tsc --emitDeclarationOnly --declaration --outDir dist",
+    "build": "node scripts/build.mjs",
     "dev": "tsc --watch",
     "typecheck": "tsc --noEmit",
-    "test": "bun test",
-    "test:watch": "bun test --watch"
+    "test": "bun test src",
+    "test:watch": "bun test --watch src",
+    "check:cache-drift": "node scripts/check-cache-drift.mjs",
+    "smoke:package": "node scripts/smoke-package.mjs",
+    "release:check": "bun run test && bun run typecheck && bun run check:cache-drift && bun run build && bun run smoke:package",
+    "prepack": "bun run build",
+    "prepublishOnly": "bun run release:check"
   }
 }

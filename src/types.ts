@@ -1,127 +1,225 @@
-/**
- * Flag value types supported by Superflag
- */
+import type {
+  AttributeValue,
+  EvaluationContext,
+  EvaluationDetails,
+  EvaluationErrorCode,
+  EvaluationReason,
+  FlagConfig,
+  FlagKey,
+  FlagValue as CoreFlagValue,
+  FlagValueFor,
+  JsonValue,
+} from "@superflag-sh/core"
+
+export type {
+  AttributeValue,
+  EvaluationContext,
+  EvaluationErrorCode,
+  EvaluationReason,
+  Flag,
+  FlagConfig,
+  FlagKey,
+  FlagValueFor,
+  JsonValue,
+  Rollout,
+  Segment,
+  Serve,
+  TargetingRule,
+  Variation,
+} from "@superflag-sh/core"
+
+/** @deprecated Use the core FlagConfig contract. */
 export type FlagType = "bool" | "string" | "number" | "json"
 
-/**
- * A single flag value as returned from the server
- */
-export interface FlagValue {
-  type: FlagType
-  value: boolean | string | number | object
-  rollout?: {
-    percentage: number
-  }
-  variants?: Array<{
-    value: boolean | string | number | object
-    weight: number
-    name?: string
-  }>
+/** A remotely configured flag definition from the shared core schema. */
+export type FlagValue = FlagConfig["flags"][string]
+export type Flags = FlagConfig["flags"]
+
+export type SuperflagStatus =
+  | "idle"
+  | "loading"
+  | "refreshing"
+  | "ready"
+  | "stale"
+  | "error"
+  | "rate-limited"
+
+export type SuperflagSource = "cache" | "network" | "default"
+export type RefreshReason = "initial" | "manual" | "ttl" | "visibility" | "online"
+
+export interface SuperflagDiagnostic {
+  code:
+    | EvaluationErrorCode
+    | "CACHE_EXPIRED"
+    | "CACHE_INVALID"
+    | "CALLBACK_ERROR"
+    | "CONFIG_INVALID"
+    | "FETCH_ERROR"
+    | "RETRY_SCHEDULED"
+  message: string
+  severity: "info" | "warning" | "error"
+  flagKey?: string
+  attempt?: number
+  cause?: unknown
 }
 
-/**
- * The flags record type
- */
-export type Flags = Record<string, FlagValue>
+export type SuperflagEvaluationDetails<T = CoreFlagValue> = Omit<
+  EvaluationDetails,
+  "value" | "source" | "configVersion"
+> & {
+  value: T
+  source: SuperflagSource
+  configVersion: number | null
+}
 
-/**
- * SDK status states
- */
-export type SuperflagStatus = "idle" | "loading" | "ready" | "error" | "rate-limited"
+export interface SuperflagEvaluationEvent<T = CoreFlagValue> {
+  flagKey: string
+  value: T
+  variation?: string
+  reason: EvaluationReason
+  errorCode?: EvaluationErrorCode
+  source: SuperflagSource
+  configVersion: number | null
+  timestamp: string
+}
 
-/**
- * Internal state managed by the SDK
- */
+export type SuperflagExposureEvent = Omit<SuperflagEvaluationEvent, "value" | "errorCode">
+
+export interface SuperflagReadyInfo {
+  source: Exclude<SuperflagSource, "default">
+  fetchedAt: number
+  configVersion: number
+  appId: string
+  environment: string
+}
+
 export interface SuperflagState {
+  config: FlagConfig | null
   flags: Flags
   status: SuperflagStatus
+  source: SuperflagSource
+  appId: string | null
+  environment: string | null
+  /** @deprecated Use configVersion. */
   version: number | null
+  configVersion: number | null
   etag: string | null
+  /** @deprecated Use fetchedAt. */
   lastFetchedAt: number | null
+  fetchedAt: number | null
+  /** Cache/config age in seconds at the latest lifecycle transition. */
+  age: number | null
+  stale: boolean
   error: string | null
+  targetingKey?: string
+  attributes?: Readonly<Record<string, AttributeValue>>
+  /** @deprecated Use targetingKey. */
   userId?: string
+  refresh: () => Promise<void>
 }
 
-/**
- * Props for the SuperflagProvider component
- */
 export interface SuperflagProviderProps {
-  /**
-   * Client key for authentication.
-   * Falls back to process.env.EXPO_PUBLIC_SUPERFLAG_CLIENT_KEY if not provided.
-   */
   clientKey?: string
-  /**
-   * Time-to-live in seconds before refetching config.
-   * @default 60
-   */
+  configUrl?: string
   ttlSeconds?: number
-  /**
-   * Custom storage adapter. If not provided, auto-detects based on environment.
-   * Use this to integrate with expo-sqlite, MMKV, or any other storage.
-   */
+  /** Maximum time cached configuration may be served. Defaults to 24 hours. */
+  maxStaleAgeSeconds?: number
+  /** Additional attempts after the initial request. Defaults to 2. */
+  maxRetries?: number
+  retryBaseDelayMs?: number
+  retryMaxDelayMs?: number
   storage?: StorageAdapter
-  /**
-   * User ID for rollout/variant bucketing.
-   * Required for flags with rollout percentages or A/B test variants.
-   */
+  targetingKey?: string
+  attributes?: Readonly<Record<string, AttributeValue>>
+  /** @deprecated Use targetingKey. */
   userId?: string
-  /**
-   * React children
-   */
+  onReady?: (info: SuperflagReadyInfo) => void
+  onDiagnostic?: (diagnostic: SuperflagDiagnostic) => void
+  onEvaluation?: (event: SuperflagEvaluationEvent) => void
+  onExposure?: (event: SuperflagExposureEvent) => void
   children: React.ReactNode
 }
 
-/**
- * Configuration response from the server
- */
 export interface ConfigResponse {
   appId: string
   env: string
   version: number
-  doc: {
-    flags: Flags
-    overrides: Record<string, unknown>
-    rules: Record<string, unknown>
-  }
+  doc: FlagConfig
   ttlSeconds: number
 }
 
-/**
- * Cached config structure stored in storage
- */
 export interface CachedConfig {
+  schemaVersion: 3
+  endpointFingerprint: string
+  clientKeyFingerprint: string
+  appId: string
+  environment: string
+  /** Retained for the shared cache identity validator. */
   flags: Flags
+  config: FlagConfig
   version: number
   etag: string
   fetchedAt: number
 }
 
-/**
- * Storage adapter interface for cross-platform storage
- */
 export interface StorageAdapter {
   getItem(key: string): Promise<string | null>
   setItem(key: string, value: string): Promise<void>
   removeItem(key: string): Promise<void>
 }
 
-/**
- * Client configuration options
- */
 export interface ClientConfig {
   clientKey: string
+  configUrl?: string
   ttlSeconds: number
+  maxStaleAgeSeconds: number
+  maxRetries: number
+  retryBaseDelayMs: number
+  retryMaxDelayMs: number
   onStateChange: (state: SuperflagState) => void
+  onReady?: (info: SuperflagReadyInfo) => void
+  onDiagnostic?: (diagnostic: SuperflagDiagnostic) => void
   storage?: StorageAdapter
+  targetingKey?: string
+  attributes?: Readonly<Record<string, AttributeValue>>
   userId?: string
 }
 
-/**
- * Superflag client interface
- */
 export interface SuperflagClient {
   initialize: () => Promise<void>
   destroy: () => void
+  refresh: () => Promise<void>
+  /** @deprecated Use refresh. */
   refetch: () => Promise<void>
+  setContext: (context: Partial<EvaluationContext> & { userId?: string }) => void
 }
+
+export type TypedFlagValues<T> = T extends FlagConfig
+  ? { [K in FlagKey<T>]: FlagValueFor<T, K> }
+  : T
+
+export interface TypedSuperflagClient<T extends object> {
+  getFlag<K extends Extract<keyof TypedFlagValues<T>, string>>(
+    flagKey: K,
+    fallback: TypedFlagValues<T>[K],
+  ): TypedFlagValues<T>[K]
+  getFlagDetails<K extends Extract<keyof TypedFlagValues<T>, string>>(
+    flagKey: K,
+    fallback: TypedFlagValues<T>[K],
+  ): SuperflagEvaluationDetails<TypedFlagValues<T>[K]>
+  refresh: () => Promise<void>
+}
+
+export interface TypedSuperflagHooks<T extends object> {
+  useFlag<K extends Extract<keyof TypedFlagValues<T>, string>>(
+    flagKey: K,
+    fallback: TypedFlagValues<T>[K],
+  ): TypedFlagValues<T>[K]
+  useFlagDetails<K extends Extract<keyof TypedFlagValues<T>, string>>(
+    flagKey: K,
+    fallback: TypedFlagValues<T>[K],
+  ): SuperflagEvaluationDetails<TypedFlagValues<T>[K]>
+  useClient: () => TypedSuperflagClient<T>
+}
+
+export type ObjectFlagValue = Exclude<JsonValue, string | number | boolean | null>

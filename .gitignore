@@ -3,3 +3,8 @@ dist/
 .DS_Store
 *.log
 .env*
+.npmrc
+*.key
+*.pem
+*.p12
+*.pfx
