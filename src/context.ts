@@ -4,7 +4,10 @@ import type {
   SuperflagEvaluationDetails,
   SuperflagExposureEvent,
   SuperflagState,
+  SuperflagTrackOptions,
+  SuperflagTrackResult,
 } from "./types.js"
+import type { TelemetryFlushResult, TelemetryShutdownResult } from "@superflag-sh/core"
 
 const noRefresh = async (): Promise<void> => {}
 
@@ -32,6 +35,17 @@ export interface SuperflagContextValue extends SuperflagState {
     details: SuperflagEvaluationDetails<unknown>,
     exposed: boolean,
   ) => void
+  track: (
+    flagKey: string,
+    metricKey: string,
+    value: number,
+    options?: SuperflagTrackOptions,
+  ) => Promise<SuperflagTrackResult>
+  flush: () => Promise<TelemetryFlushResult>
+  shutdown: (options?: {
+    flush?: boolean
+    timeoutMs?: number
+  }) => Promise<TelemetryShutdownResult>
 }
 
 export const SuperflagContext: React.Context<SuperflagContextValue | null> =

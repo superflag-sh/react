@@ -1,6 +1,6 @@
 {
   "name": "@superflag-sh/react",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "React SDK for Superflag feature flags (web only)",
   "type": "module",
   "main": "./dist/cjs/index.js",
@@ -37,7 +37,7 @@
     "react": ">=18"
   },
   "dependencies": {
-    "@superflag-sh/core": "^0.1.0"
+    "@superflag-sh/core": "^0.2.1"
   },
   "devDependencies": {
     "@types/node": "^25.0.3",

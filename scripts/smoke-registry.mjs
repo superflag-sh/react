@@ -152,7 +152,7 @@ try {
     if (!entries.includes(entry)) throw new Error(`Package export target is missing from the registry artifact: ${target}`)
   }
 
-  const expectedExports = ["SuperflagProvider", "createTypedHooks", "useBooleanFlag", "useBooleanFlagDetails", "useFlag", "useFlagDetails", "useFlags", "useNumberFlag", "useNumberFlagDetails", "useObjectFlag", "useObjectFlagDetails", "useStringFlag", "useStringFlagDetails", "useSuperflagClient"]
+  const expectedExports = ["SuperflagProvider", "createHostedTelemetryTransport", "createTypedHooks", "useBooleanFlag", "useBooleanFlagDetails", "useFlag", "useFlagDetails", "useFlags", "useNumberFlag", "useNumberFlagDetails", "useObjectFlag", "useObjectFlagDetails", "useStringFlag", "useStringFlagDetails", "useSuperflagClient"]
   writeFileSync(join(temp, "expected-exports.json"), JSON.stringify(expectedExports))
   writeFileSync(join(temp, "smoke-esm.mjs"), 'import * as sdk from "@superflag-sh/react";\nimport expected from "./expected-exports.json" with { type: "json" };\nif (JSON.stringify(Object.keys(sdk).sort()) !== JSON.stringify(expected.sort())) throw new Error(`ESM exports differ: ${Object.keys(sdk)}`);\n')
   writeFileSync(join(temp, "smoke-cjs.cjs"), 'const sdk = require("@superflag-sh/react");\nconst expected = require("./expected-exports.json");\nif (JSON.stringify(Object.keys(sdk).sort()) !== JSON.stringify(expected.sort())) throw new Error(`CJS exports differ: ${Object.keys(sdk)}`);\n')

@@ -1,4 +1,6 @@
 export { SuperflagProvider } from "./provider.js"
+export { createHostedTelemetryTransport } from "./telemetry.js"
+export type { HostedTelemetryTransportOptions } from "./telemetry.js"
 export {
   createTypedHooks,
   useBooleanFlag,
@@ -41,12 +43,28 @@ export type {
   SuperflagExposureEvent,
   SuperflagProviderProps,
   SuperflagReadyInfo,
+  SuperflagHostedTelemetryOptions,
   SuperflagSource,
   SuperflagState,
   SuperflagStatus,
+  SuperflagTelemetryIdentityInput,
+  SuperflagTelemetryOptions,
+  SuperflagTelemetryQueueOptions,
+  SuperflagTrackOptions,
+  SuperflagTrackResult,
   TargetingRule,
   TypedFlagValues,
   TypedSuperflagClient,
   TypedSuperflagHooks,
   Variation,
 } from "./types.js"
+
+export type {
+  FeatureEvent,
+  FeatureEventDimension,
+  PseudonymousSubject,
+  TelemetryDiagnostic,
+  TelemetryFlushResult,
+  TelemetryShutdownResult,
+  TelemetryTransport,
+} from "@superflag-sh/core"

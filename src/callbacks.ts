@@ -57,7 +57,17 @@ export function dispatchEvaluationCallbacks(
     })
   }
 
-  if (!exposed) return
+  // A fallback read during provider initialization is an evaluation diagnostic,
+  // not an actual feature exposure. Only a resolved remote/cache variation may
+  // enter exposure callbacks or canonical telemetry.
+  if (
+    !exposed ||
+    details.source === "default" ||
+    details.errorCode !== undefined ||
+    details.variation === undefined
+  ) {
+    return
+  }
   try {
     callbacks.onExposure?.(toExposureEvent(details))
   } catch (cause) {

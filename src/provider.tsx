@@ -5,6 +5,7 @@ import type {
   SuperflagEvaluationDetails,
   SuperflagProviderProps,
   SuperflagState,
+  SuperflagTelemetryOptions,
 } from "./types.js"
 import {
   SuperflagContext,
@@ -13,9 +14,19 @@ import {
 } from "./context.js"
 import { createClient } from "./client.js"
 import { dispatchEvaluationCallbacks } from "./callbacks.js"
+import {
+  createBrowserTelemetryController,
+  disabledTelemetryController,
+} from "./telemetry.js"
 
 function nonNegative(value: number, fallback: number): number {
   return Number.isFinite(value) && value >= 0 ? value : fallback
+}
+
+function stableEntries(value: Readonly<Record<string, string>> | undefined): string {
+  return JSON.stringify(Object.entries(value ?? {}).sort(([left], [right]) =>
+    left.localeCompare(right),
+  ))
 }
 
 export function SuperflagProvider({
@@ -34,6 +45,7 @@ export function SuperflagProvider({
   onDiagnostic,
   onEvaluation,
   onExposure,
+  telemetry,
   children,
 }: SuperflagProviderProps): ReactElement {
   const clientKey =
@@ -49,8 +61,106 @@ export function SuperflagProvider({
     retryBaseDelayMs,
     nonNegative(rawRetryMaxDelayMs, 5_000),
   )
+  const telemetryOptionsRef = useRef(telemetry)
+  telemetryOptionsRef.current = telemetry
+  const hostedOptions =
+    typeof telemetry?.hosted === "object" ? telemetry.hosted : undefined
+  const hostedHeadersSignature = stableEntries(hostedOptions?.headers)
+  const allowedAttributesSignature = JSON.stringify(
+    telemetry?.allowedAttributes ?? [],
+  )
+  const stableTelemetry = useMemo<SuperflagTelemetryOptions | undefined>(
+    () =>
+      telemetry
+        ? {
+            ...telemetry,
+            ...(telemetry.transport
+              ? {
+                  transport: {
+                    send: (events, options) => {
+                      const current = telemetryOptionsRef.current?.transport
+                      return current
+                        ? current.send(events, options)
+                        : Promise.reject(new Error("Telemetry transport was removed"))
+                    },
+                  },
+                }
+              : {}),
+            ...(hostedOptions
+              ? {
+                  hosted: {
+                    ...hostedOptions,
+                    ...(hostedOptions.fetch
+                      ? {
+                          fetch: (input, init) => {
+                            const current =
+                              typeof telemetryOptionsRef.current?.hosted === "object"
+                                ? telemetryOptionsRef.current.hosted.fetch
+                                : undefined
+                            return (current ?? globalThis.fetch)(input, init)
+                          },
+                        }
+                      : {}),
+                    ...(hostedOptions.headers
+                      ? { headers: { ...hostedOptions.headers } }
+                      : {}),
+                  },
+                }
+              : {}),
+            ...(telemetry.pseudonymize
+              ? {
+                  pseudonymize: (input) => {
+                    const current = telemetryOptionsRef.current?.pseudonymize
+                    if (!current) throw new Error("Telemetry pseudonymizer was removed")
+                    return current(input)
+                  },
+                }
+              : {}),
+            ...(telemetry.onEvent
+              ? {
+                  onEvent: (event) => telemetryOptionsRef.current?.onEvent?.(event),
+                }
+              : {}),
+            ...(telemetry.onDiagnostic
+              ? {
+                  onDiagnostic: (diagnostic) =>
+                    telemetryOptionsRef.current?.onDiagnostic?.(diagnostic),
+                }
+              : {}),
+            ...(telemetry.allowedAttributes
+              ? { allowedAttributes: [...telemetry.allowedAttributes] }
+              : {}),
+          }
+        : undefined,
+    [
+      telemetry !== undefined,
+      telemetry?.transport !== undefined,
+      telemetry?.hosted === true,
+      hostedOptions?.baseUrl,
+      hostedOptions?.fetch !== undefined,
+      hostedHeadersSignature,
+      telemetry?.pseudonymize !== undefined,
+      telemetry?.subjectState,
+      telemetry?.subjectRevision,
+      allowedAttributesSignature,
+      telemetry?.onEvent !== undefined,
+      telemetry?.onDiagnostic !== undefined,
+      telemetry?.maxQueueSize,
+      telemetry?.batchSize,
+      telemetry?.flushIntervalMs,
+      telemetry?.backpressure,
+      telemetry?.maxAttempts,
+      telemetry?.retryBaseMs,
+      telemetry?.retryMaxMs,
+      telemetry?.retryJitterRatio,
+      telemetry?.maxExposureDedupeEntries,
+      telemetry?.maxEventPayloadBytes,
+      telemetry?.shutdownTimeoutMs,
+    ],
+  )
 
   const clientRef = useRef<ReturnType<typeof createClient> | null>(null)
+  const telemetryRef = useRef(disabledTelemetryController)
   const onReadyRef = useRef(onReady)
   const onDiagnosticRef = useRef(onDiagnostic)
   const onEvaluationRef = useRef(onEvaluation)
@@ -69,6 +179,8 @@ export function SuperflagProvider({
           error: "Missing clientKey prop or NEXT_PUBLIC_SUPERFLAG_CLIENT_KEY",
         },
   )
+  const stateRef = useRef(state)
+  stateRef.current = state
 
   useEffect(() => {
     if (!clientKey) {
@@ -119,6 +231,46 @@ export function SuperflagProvider({
     clientRef.current?.setContext({ targetingKey, attributes, userId })
   }, [targetingKey, attributes, userId])
 
+  useEffect(() => {
+    if (!clientKey || !stableTelemetry) {
+      telemetryRef.current = disabledTelemetryController
+      return
+    }
+    let controller: ReturnType<typeof createBrowserTelemetryController>
+    try {
+      controller = createBrowserTelemetryController({
+        clientKey,
+        configUrl,
+        telemetry: stableTelemetry,
+        getState: () => ({
+          config: stateRef.current.config,
+          targetingKey: stateRef.current.targetingKey,
+        }),
+        onDiagnostic: (diagnostic) => onDiagnosticRef.current?.(diagnostic),
+      })
+    } catch (cause) {
+      telemetryRef.current = disabledTelemetryController
+      try {
+        onDiagnosticRef.current?.({
+          code: "TELEMETRY_ERROR",
+          message: "Telemetry setup failed; evaluation remains available",
+          severity: "error",
+          cause,
+        })
+      } catch {
+        // Telemetry and diagnostic callbacks are both fail-open.
+      }
+      return
+    }
+    telemetryRef.current = controller
+    return () => {
+      if (telemetryRef.current === controller) {
+        telemetryRef.current = disabledTelemetryController
+      }
+      controller.destroy()
+    }
+  }, [clientKey, configUrl, stableTelemetry])
+
   const evaluate = useMemo(() => {
     if (!state.config) return defaultEvaluation
     const evaluator = createEvaluator(state.config)
@@ -159,6 +311,7 @@ export function SuperflagProvider({
 
   const recordEvaluation = useCallback(
     (details: SuperflagEvaluationDetails<unknown>, exposed: boolean): void => {
+      telemetryRef.current.recordEvaluation(details, exposed)
       dispatchEvaluationCallbacks(details, exposed, {
         onDiagnostic: onDiagnosticRef.current,
         onEvaluation: onEvaluationRef.current,
@@ -168,9 +321,25 @@ export function SuperflagProvider({
     [],
   )
 
+  const track = useCallback(
+    (
+      flagKey: string,
+      metricKey: string,
+      value: number,
+      options?: import("./types.js").SuperflagTrackOptions,
+    ) => telemetryRef.current.track(flagKey, metricKey, value, options),
+    [],
+  )
+  const flush = useCallback(() => telemetryRef.current.flush(), [])
+  const shutdown = useCallback(
+    (options?: { flush?: boolean; timeoutMs?: number }) =>
+      telemetryRef.current.shutdown(options),
+    [],
+  )
+
   const contextValue = useMemo(
-    () => ({ ...state, evaluate, recordEvaluation }),
-    [state, evaluate, recordEvaluation],
+    () => ({ ...state, evaluate, recordEvaluation, track, flush, shutdown }),
+    [state, evaluate, recordEvaluation, track, flush, shutdown],
   )
 
   return (

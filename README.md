@@ -64,6 +64,7 @@ function Checkout() {
   onDiagnostic={(diagnostic) => {}}
   onEvaluation={(event) => {}}
   onExposure={(event) => {}}
+  telemetry={{ hosted: true }}
 >
   <App />
 </SuperflagProvider>
@@ -74,6 +75,77 @@ The provider serves an identity-bound cache immediately when it is within `maxSt
 Refreshes are deduplicated, retry transient network/408/425/429/5xx failures with bounded exponential backoff, and run automatically on TTL expiry, `visibilitychange` to visible, and browser `online`. Unmount removes timers/listeners and aborts in-flight work.
 
 Consumer callbacks are isolated from SDK behavior. Evaluation and exposure events contain no targeting key, attributes, or client key.
+`onEvaluation` retains fallback/error visibility, while `onExposure` runs only
+for a successfully resolved remote or cached variation. Provider initialization,
+detail reads, and `useFlags()` never create false exposures.
+
+Value hooks and `getFlag` emit one exposure carrying the decision provenance.
+Explicit detail/inspection reads emit one decision instead. The SDK deliberately
+does not emit a paired decision plus exposure for the same value read, which
+would double-count ordinary feature use.
+
+## Feature telemetry and outcomes
+
+Canonical decision, exposure, and numeric outcome telemetry is opt-in. Hosted
+delivery must be explicitly enabled; otherwise supply a custom transport or use
+callback-only mode.
+
+```tsx
+<SuperflagProvider
+  clientKey="pub_prod_abc123"
+  targetingKey="user-123"
+  telemetry={{
+    hosted: true,
+    maxQueueSize: 1_000,
+    batchSize: 50,
+    allowedAttributes: ["plan", "country"],
+    onDiagnostic: (diagnostic) => console.warn(diagnostic),
+  }}
+>
+  <App />
+</SuperflagProvider>
+```
+
+`hosted: true` posts versioned batches to `/api/v1/events/batch` on the
+configured control-plane origin. Use `hosted: { baseUrl }` for a separate
+control-plane URL or `transport` for a fully custom `TelemetryTransport`.
+Evaluation never waits on telemetry. The core queue is bounded, batched,
+deduplicates exposures, retries transient item failures with backoff, and reports
+all delivery failures through fail-open diagnostics.
+
+The default browser identity projection combines a random installation key with
+the application/environment namespace to create a non-reversible pseudonym
+before enqueueing an event. Only the random key is persisted; raw targeting
+keys, targeting attributes, flag values, and client keys are not event fields or
+storage values. Applications that need account-level identity across devices or
+own a rotation/consent boundary can provide `pseudonymize`; it may be async and
+receives the raw targeting key only inside that explicit hook.
+
+Record a numeric feature outcome through the imperative client after the subject
+has actually read the flag value:
+
+```tsx
+function PurchaseButton() {
+  const checkout = useBooleanFlag("checkout", false)
+  const flags = useSuperflagClient<{ checkout: boolean }>()
+
+  async function purchased(revenue: number) {
+    await flags.track("checkout", "revenue", revenue, {
+      revision: 1,
+      attributes: { plan: "pro", country: "US" },
+    })
+  }
+
+  return <button disabled={!checkout} onClick={() => void purchased(19)}>Buy</button>
+}
+```
+
+`track` is intentionally feature-scoped, numeric, and tied to the current
+subject's latest real exposure. It rejects missing exposures and non-finite
+values, and copies only attributes named by `allowedAttributes`. The client also
+exposes `flush()` and `shutdown()`; the provider opportunistically flushes when
+the page is hidden, on `pagehide`, and when the browser returns online. Unmount
+performs a bounded best-effort shutdown without blocking React cleanup.
 
 ## Flag hooks
 

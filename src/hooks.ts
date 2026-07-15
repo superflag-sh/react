@@ -118,9 +118,26 @@ export function useSuperflagClient<
         context.recordEvaluation(details, false)
         return details as SuperflagEvaluationDetails<TypedFlagValues<T>[K]>
       },
+      track<K extends Extract<keyof TypedFlagValues<T>, string>>(
+        flagKey: K,
+        metricKey: string,
+        value: number,
+        options?: import("./types.js").SuperflagTrackOptions,
+      ) {
+        return context.track(flagKey, metricKey, value, options)
+      },
+      flush: context.flush,
+      shutdown: context.shutdown,
       refresh: context.refresh,
     }),
-    [context.evaluate, context.recordEvaluation, context.refresh],
+    [
+      context.evaluate,
+      context.recordEvaluation,
+      context.track,
+      context.flush,
+      context.shutdown,
+      context.refresh,
+    ],
   )
 }
 

@@ -62,4 +62,30 @@ describe("shared core evaluation", () => {
     ).not.toThrow()
     expect(diagnostics).toEqual(["CALLBACK_ERROR", "CALLBACK_ERROR"])
   })
+
+  test("provider fallback evaluations never report false exposures", () => {
+    const evaluations: string[] = []
+    const exposures: string[] = []
+    dispatchEvaluationCallbacks(
+      {
+        flagKey: "checkout",
+        value: false,
+        reason: "DEFAULT",
+        errorCode: "FLAG_NOT_FOUND",
+        errorMessage: "not initialized",
+        segmentIds: [],
+        prerequisites: [],
+        source: "default",
+        configVersion: null,
+        timestamp: new Date().toISOString(),
+      },
+      true,
+      {
+        onEvaluation: (event) => evaluations.push(event.flagKey),
+        onExposure: (event) => exposures.push(event.flagKey),
+      },
+    )
+    expect(evaluations).toEqual(["checkout"])
+    expect(exposures).toEqual([])
+  })
 })

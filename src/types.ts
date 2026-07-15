@@ -10,6 +10,17 @@ import type {
   FlagValueFor,
   JsonValue,
 } from "@superflag-sh/core"
+import type {
+  FeatureEvent,
+  FeatureEventDimension,
+  PseudonymousSubject,
+  TelemetryAdapterOptions,
+  TelemetryDiagnostic,
+  TelemetryEnqueueResult,
+  TelemetryFlushResult,
+  TelemetryShutdownResult,
+  TelemetryTransport,
+} from "@superflag-sh/core"
 
 export type {
   AttributeValue,
@@ -56,12 +67,63 @@ export interface SuperflagDiagnostic {
     | "CONFIG_INVALID"
     | "FETCH_ERROR"
     | "RETRY_SCHEDULED"
+    | "TELEMETRY_DROPPED"
+    | "TELEMETRY_ERROR"
   message: string
   severity: "info" | "warning" | "error"
   flagKey?: string
   attempt?: number
+  telemetryCode?: TelemetryDiagnostic["code"]
   cause?: unknown
 }
+
+export interface SuperflagTelemetryIdentityInput {
+  targetingKey: string
+  namespace: string
+  appId: string
+  environment: string
+  state: PseudonymousSubject["state"]
+}
+
+export interface SuperflagHostedTelemetryOptions {
+  /** Control-plane base URL. `/api/v1/events/batch` is appended safely. */
+  baseUrl?: string
+  headers?: Readonly<Record<string, string>>
+  fetch?: typeof globalThis.fetch
+}
+
+export type SuperflagTelemetryQueueOptions = Omit<
+  TelemetryAdapterOptions,
+  "transport" | "onEvent" | "onDiagnostic" | "allowedDimensions" | "scheduler"
+>
+
+/** Telemetry is disabled unless this object supplies hosted delivery, a transport, or onEvent. */
+export interface SuperflagTelemetryOptions extends SuperflagTelemetryQueueOptions {
+  transport?: TelemetryTransport
+  hosted?: boolean | SuperflagHostedTelemetryOptions
+  pseudonymize?: (
+    input: SuperflagTelemetryIdentityInput,
+  ) => PseudonymousSubject | Promise<PseudonymousSubject>
+  subjectState?: PseudonymousSubject["state"]
+  subjectRevision?: number
+  /** Outcome attributes are projected through this allow-list. Defaults closed. */
+  allowedAttributes?: readonly string[]
+  onEvent?: (event: FeatureEvent) => void
+  onDiagnostic?: (diagnostic: TelemetryDiagnostic) => void
+}
+
+export interface SuperflagTrackOptions {
+  revision?: number
+  attributes?: Readonly<Record<string, FeatureEventDimension>>
+}
+
+export type SuperflagTrackResult =
+  | TelemetryEnqueueResult
+  | {
+      status: "dropped"
+      reason: "invalid_outcome" | "missing_exposure" | "missing_identity"
+      queueSize: number
+    }
 
 export type SuperflagEvaluationDetails<T = CoreFlagValue> = Omit<
   EvaluationDetails,
@@ -137,6 +199,7 @@ export interface SuperflagProviderProps {
   onDiagnostic?: (diagnostic: SuperflagDiagnostic) => void
   onEvaluation?: (event: SuperflagEvaluationEvent) => void
   onExposure?: (event: SuperflagExposureEvent) => void
+  telemetry?: SuperflagTelemetryOptions
   children: React.ReactNode
 }
 
@@ -207,6 +270,18 @@ export interface TypedSuperflagClient<T extends object> {
     flagKey: K,
     fallback: TypedFlagValues<T>[K],
   ): SuperflagEvaluationDetails<TypedFlagValues<T>[K]>
+  /** Records a numeric outcome against this subject's latest real exposure. */
+  track<K extends Extract<keyof TypedFlagValues<T>, string>>(
+    flagKey: K,
+    metricKey: string,
+    value: number,
+    options?: SuperflagTrackOptions,
+  ): Promise<SuperflagTrackResult>
+  flush: () => Promise<TelemetryFlushResult>
+  shutdown: (options?: {
+    flush?: boolean
+    timeoutMs?: number
+  }) => Promise<TelemetryShutdownResult>
   refresh: () => Promise<void>
 }
 
