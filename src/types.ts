@@ -270,11 +270,11 @@ export interface TypedSuperflagClient<T extends object> {
     flagKey: K,
     fallback: TypedFlagValues<T>[K],
   ): SuperflagEvaluationDetails<TypedFlagValues<T>[K]>
-  /** Records a numeric outcome against this subject's latest real exposure. */
+  /** Records a binary conversion or numeric outcome against the latest real exposure. */
   track<K extends Extract<keyof TypedFlagValues<T>, string>>(
     flagKey: K,
     metricKey: string,
-    value: number,
+    value?: number,
     options?: SuperflagTrackOptions,
   ): Promise<SuperflagTrackResult>
   flush: () => Promise<TelemetryFlushResult>

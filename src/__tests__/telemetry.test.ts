@@ -111,7 +111,7 @@ describe("canonical browser telemetry", () => {
     controller.destroy()
   })
 
-  test("tracks numeric outcomes only after exposure and projects allow-listed attributes", async () => {
+  test("tracks binary and numeric outcomes only after exposure with bounded attributes", async () => {
     const delivered: FeatureEvent[] = []
     const diagnostics: SuperflagDiagnostic[] = []
     const controller = createBrowserTelemetryController({
@@ -140,6 +140,14 @@ describe("canonical browser telemetry", () => {
       status: "dropped",
       reason: "missing_exposure",
     })
+    await expect(controller.track("", "revenue")).resolves.toMatchObject({
+      status: "dropped",
+      reason: "invalid_outcome",
+    })
+    await expect(controller.track("checkout", "revenue", Number.NaN)).resolves.toMatchObject({
+      status: "dropped",
+      reason: "invalid_outcome",
+    })
     controller.recordEvaluation(evaluation(), true)
     await expect(
       controller.track("checkout", "revenue", 12.5, {
@@ -147,19 +155,87 @@ describe("canonical browser telemetry", () => {
         attributes: { plan: "pro", rawEmail: "private@example.com" },
       }),
     ).resolves.toMatchObject({ status: "queued" })
+    await expect(controller.track("checkout", "purchase")).resolves.toMatchObject({
+      status: "queued",
+    })
     await controller.flush()
 
-    const outcome = delivered.find((event) => event.kind === "outcome")
-    expect(outcome).toMatchObject({
+    const exposure = delivered.find((event) => event.kind === "exposure")
+    const outcomes = delivered.filter((event) => event.kind === "outcome")
+    expect(outcomes[0]).toMatchObject({
       kind: "outcome",
       flagKey: "checkout",
-      exposureId: delivered.find((event) => event.kind === "exposure")?.id,
+      exposureId: exposure?.id,
       metric: { key: "revenue", revision: 2 },
       value: 12.5,
       dimensions: { plan: "pro" },
     })
-    expect(JSON.stringify(outcome)).not.toContain("private@example.com")
+    expect(outcomes[1]).toMatchObject({
+      kind: "outcome",
+      exposureId: exposure?.id,
+      metric: { key: "purchase", revision: 1 },
+      value: true,
+    })
+    expect(outcomes[0]?.id).not.toBe(outcomes[1]?.id)
+    expect(JSON.stringify(outcomes)).not.toContain("private@example.com")
     expect(diagnostics.some((entry) => entry.code === "TELEMETRY_DROPPED")).toBe(true)
+    controller.destroy()
+  })
+
+  test("rejects identity changes until a new exposure and then uses the latest exposure", async () => {
+    const events: FeatureEvent[] = []
+    let targetingKey = "first-user"
+    const controller = createBrowserTelemetryController({
+      clientKey: "pub_test",
+      telemetry: {
+        onEvent: (event) => events.push(event),
+        pseudonymize: ({ targetingKey: key }) => ({
+          ...subject,
+          id: key === "first-user"
+            ? "psn_1111111111111111"
+            : "psn_2222222222222222",
+        }),
+      },
+      getState: () => ({ config: conformanceConfig, targetingKey }),
+    })
+
+    controller.recordEvaluation(evaluation(), true)
+    await expect(controller.track("checkout", "purchase")).resolves.toMatchObject({
+      status: "callback_only",
+    })
+    targetingKey = "second-user"
+    await expect(controller.track("checkout", "purchase")).resolves.toMatchObject({
+      status: "dropped",
+      reason: "missing_exposure",
+    })
+    controller.recordEvaluation(
+      { ...evaluation(), variation: "second-variation" },
+      true,
+    )
+    await expect(controller.track("checkout", "purchase")).resolves.toMatchObject({
+      status: "callback_only",
+    })
+
+    const exposures = events.filter((event) => event.kind === "exposure")
+    const outcomes = events.filter((event) => event.kind === "outcome")
+    expect(exposures).toHaveLength(2)
+    expect(outcomes.at(-1)).toMatchObject({
+      exposureId: exposures.at(-1)?.id,
+      variation: "second-variation",
+    })
+    controller.destroy()
+  })
+
+  test("reports a missing identity before attempting exposure attribution", async () => {
+    const controller = createBrowserTelemetryController({
+      clientKey: "pub_test",
+      telemetry: { onEvent: () => {} },
+      getState: () => ({ config: conformanceConfig }),
+    })
+    await expect(controller.track("checkout", "purchase")).resolves.toMatchObject({
+      status: "dropped",
+      reason: "missing_identity",
+    })
     controller.destroy()
   })
 

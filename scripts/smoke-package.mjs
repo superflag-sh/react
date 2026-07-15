@@ -47,7 +47,7 @@ function verifyDeclarations(label, reactVersion, reactTypesVersion) {
       'interface FlagValues { enabled: boolean }\n' +
       'const typed = createTypedHooks<FlagValues>();\n' +
       'const Child = () => <span>{String(useFlag("enabled", false))}</span>;\n' +
-      'const TypedChild = () => { const client = typed.useClient(); void client.track("enabled", "conversion", 1); void client.flush(); return <span>{String(typed.useFlag("enabled", client.getFlag("enabled", false)))}</span> };\n' +
+      'const TypedChild = () => { const client = typed.useClient(); void client.track("enabled", "conversion"); void client.track("enabled", "revenue", 1); void client.flush(); return <span>{String(typed.useFlag("enabled", client.getFlag("enabled", false)))}</span> };\n' +
       'export const App = () => <SuperflagProvider clientKey="pub_prod_smoke" targetingKey="user-1" storage={storage} telemetry={telemetry}><Child /><TypedChild /></SuperflagProvider>;\n',
   )
   run(
@@ -119,8 +119,12 @@ try {
       `await act(async () => root.update(renderApp()))\n` +
       `const tracked = await client.track("checkout", "revenue", 3.5, { attributes: { plan: "pro", email: "raw-user@example.com" } })\n` +
       `if (tracked.status !== "queued") throw new Error("inline telemetry options reset exposure state")\n` +
-      `const outcome = events.find((event) => event.kind === "outcome")\n` +
+      `const converted = await client.track("checkout", "converted")\n` +
+      `if (converted.status !== "queued") throw new Error("binary outcome was not queued")\n` +
+      `const outcomes = events.filter((event) => event.kind === "outcome")\n` +
+      `const outcome = outcomes.find((event) => event.metric.key === "revenue")\n` +
       `if (!outcome || outcome.dimensions?.plan !== "pro" || "email" in (outcome.dimensions || {})) throw new Error("outcome allow-list projection failed")\n` +
+      `if (!outcomes.some((event) => event.metric.key === "converted" && event.value === true)) throw new Error("binary outcome contract failed")\n` +
       `const serialized = JSON.stringify(events)\n` +
       `if (serialized.includes("raw-user@example.com") || serialized.includes("pub_never_emit")) throw new Error("raw telemetry identity leaked")\n` +
       `await client.flush()\n` +
@@ -142,7 +146,7 @@ try {
   console.log(`tarball: ${entries.length} files, source-only entries: 0`)
   console.log(`runtime imports: ESM and CommonJS ok (${manifest.name}@${manifest.version})`)
   console.log("core dependency: ^0.2.1 manifest range, local packed resolution ok")
-  console.log("packed React behavior: exposure privacy, offline fail-open, numeric outcome allow-list ok")
+  console.log("packed React behavior: exposure privacy, offline fail-open, binary/numeric outcome allow-list ok")
   console.log("consumer declarations: React 18 and React 19 bundler TSX ok (skipLibCheck disabled)")
 } finally {
   rmSync(temp, { recursive: true, force: true })

@@ -325,7 +325,7 @@ export function SuperflagProvider({
     (
       flagKey: string,
       metricKey: string,
-      value: number,
+      value?: number,
       options?: import("./types.js").SuperflagTrackOptions,
     ) => telemetryRef.current.track(flagKey, metricKey, value, options),
     [],

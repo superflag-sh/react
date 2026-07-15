@@ -2,6 +2,7 @@ import {
   createEvaluationEvent,
   createTelemetryAdapter,
   FEATURE_EVENT_SCHEMA_VERSION,
+  parseFeatureEvent,
 } from "@superflag-sh/core"
 import type {
   EvaluationDetails,
@@ -64,7 +65,7 @@ export interface BrowserTelemetryController {
   track(
     flagKey: string,
     metricKey: string,
-    value: number,
+    value?: number,
     options?: SuperflagTrackOptions,
   ): Promise<SuperflagTrackResult>
   flush(): Promise<TelemetryFlushResult>
@@ -559,17 +560,41 @@ export function createBrowserTelemetryController(
   async function trackInternal(
     flagKey: string,
     metricKey: string,
-    value: number,
+    value: number | undefined,
     trackOptions: SuperflagTrackOptions = {},
   ): Promise<SuperflagTrackResult> {
-    if (!Number.isFinite(value)) {
+    if (!flagKey.trim() || !metricKey.trim()) {
       return dropped(
         "invalid_outcome",
-        "Feature outcome value must be finite",
+        "Feature outcome requires non-empty flag and metric keys",
+        flagKey,
+      )
+    }
+    if (value !== undefined && !Number.isFinite(value)) {
+      return dropped(
+        "invalid_outcome",
+        "Feature outcome value must be finite when provided",
+        flagKey,
+      )
+    }
+    if (
+      trackOptions.revision !== undefined &&
+      (!Number.isSafeInteger(trackOptions.revision) || trackOptions.revision < 1)
+    ) {
+      return dropped(
+        "invalid_outcome",
+        "Feature outcome metric revision must be a positive safe integer",
         flagKey,
       )
     }
     const state = options.getState()
+    if (!state.targetingKey) {
+      return dropped(
+        "missing_identity",
+        "Feature outcome requires a configured targeting identity",
+        flagKey,
+      )
+    }
     await pendingExposureByFlag.get(flagKey)
     const exposure = exposureByFlag.get(flagKey)?.event
     if (!exposure) {
@@ -613,29 +638,29 @@ export function createBrowserTelemetryController(
             Object.entries(trackOptions.attributes).filter(([key]) => allow.has(key)),
           ) as Record<string, FeatureEventDimension>
         : undefined
-      return adapter.trackNumeric({
-        id: eventId(),
-        source: exposure.source,
-        flagKey: exposure.flagKey,
-        variation: exposure.variation,
-        configVersion: exposure.configVersion,
-        reason: exposure.reason,
-        timestamp: new Date().toISOString(),
-        sdk: { name: SDK_NAME, version: SDK_VERSION, platform: "browser" },
-        subject,
-        exposureId: exposure.id,
-        metric: {
-          key: metricKey,
-          revision:
-            Number.isSafeInteger(trackOptions.revision) &&
-            (trackOptions.revision as number) > 0
-              ? (trackOptions.revision as number)
-              : 1,
+      const outcome = parseFeatureEvent(
+        {
+          schemaVersion: FEATURE_EVENT_SCHEMA_VERSION,
+          id: eventId(),
+          kind: "outcome",
+          source: exposure.source,
+          flagKey: exposure.flagKey,
+          variation: exposure.variation,
+          configVersion: exposure.configVersion,
+          reason: exposure.reason,
+          timestamp: new Date().toISOString(),
+          sdk: { name: SDK_NAME, version: SDK_VERSION, platform: "browser" },
+          subject,
+          exposureId: exposure.id,
+          metric: { key: metricKey, revision: trackOptions.revision ?? 1 },
+          value: value ?? true,
+          ...(attributes && Object.keys(attributes).length > 0
+            ? { dimensions: attributes }
+            : {}),
         },
-        value,
-        ...(attributes && Object.keys(attributes).length > 0 ? { attributes } : {}),
-        allowedAttributes: telemetry.allowedAttributes ?? [],
-      })
+        { allowedDimensions: telemetry.allowedAttributes ?? [] },
+      )
+      return adapter.enqueue(outcome)
     } catch (cause) {
       return dropped(
         "invalid_outcome",
@@ -649,7 +674,7 @@ export function createBrowserTelemetryController(
   function track(
     flagKey: string,
     metricKey: string,
-    value: number,
+    value?: number,
     trackOptions: SuperflagTrackOptions = {},
   ): Promise<SuperflagTrackResult> {
     if (!accepting) {

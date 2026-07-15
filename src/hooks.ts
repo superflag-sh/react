@@ -121,7 +121,7 @@ export function useSuperflagClient<
       track<K extends Extract<keyof TypedFlagValues<T>, string>>(
         flagKey: K,
         metricKey: string,
-        value: number,
+        value?: number,
         options?: import("./types.js").SuperflagTrackOptions,
       ) {
         return context.track(flagKey, metricKey, value, options)

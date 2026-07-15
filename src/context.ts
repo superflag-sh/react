@@ -38,7 +38,7 @@ export interface SuperflagContextValue extends SuperflagState {
   track: (
     flagKey: string,
     metricKey: string,
-    value: number,
+    value?: number,
     options?: SuperflagTrackOptions,
   ) => Promise<SuperflagTrackResult>
   flush: () => Promise<TelemetryFlushResult>
