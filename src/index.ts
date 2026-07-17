@@ -56,6 +56,7 @@ export type {
   TypedFlagValues,
   TypedSuperflagClient,
   TypedSuperflagHooks,
+  UseFlagsResult,
   Variation,
 } from "./types.js"
 

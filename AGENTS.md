@@ -26,7 +26,7 @@ Run focused tests first, then:
 bun run release:check
 ```
 
-The release gate includes cache-drift and packed-consumer checks. Use
+The release gate includes shared-core cache contract and packed-consumer checks. Use
 `bun run smoke:registry` only after an authorized exact-version publication and prove
 the consumer did not resolve local workspace artifacts. The required core version
 must already exist in the registry. Do not commit, push, publish, or tag without

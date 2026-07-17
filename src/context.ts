@@ -1,5 +1,4 @@
 import { createContext } from "react"
-import type { EvaluationDetails, FlagValue as CoreFlagValue } from "@superflag-sh/core"
 import type {
   SuperflagEvaluationDetails,
   SuperflagExposureEvent,
@@ -50,25 +49,6 @@ export interface SuperflagContextValue extends SuperflagState {
 
 export const SuperflagContext: React.Context<SuperflagContextValue | null> =
   createContext<SuperflagContextValue | null>(null)
-
-export function defaultEvaluation<T>(
-  flagKey: string,
-  fallback: T | undefined,
-): SuperflagEvaluationDetails<T | undefined> {
-  const base: Omit<
-    EvaluationDetails<CoreFlagValue>,
-    "value" | "source" | "configVersion"
-  > = {
-    flagKey,
-    reason: "DEFAULT",
-    errorCode: "FLAG_NOT_FOUND",
-    errorMessage: `Flag ${flagKey} was not found`,
-    segmentIds: [],
-    prerequisites: [],
-    timestamp: new Date().toISOString(),
-  }
-  return { ...base, value: fallback, source: "default", configVersion: null }
-}
 
 export function toExposureEvent(
   details: SuperflagEvaluationDetails<unknown>,

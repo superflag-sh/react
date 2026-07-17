@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { ReactElement } from "react"
-import { createEvaluator } from "@superflag-sh/core"
+import { stableJsonSignature } from "@superflag-sh/core"
 import type {
   SuperflagEvaluationDetails,
   SuperflagProviderProps,
@@ -9,9 +9,9 @@ import type {
 } from "./types.js"
 import {
   SuperflagContext,
-  defaultEvaluation,
   initialState,
 } from "./context.js"
+import { createEvaluationReader } from "./evaluation.js"
 import { createClient } from "./client.js"
 import { dispatchEvaluationCallbacks } from "./callbacks.js"
 import {
@@ -21,12 +21,6 @@ import {
 
 function nonNegative(value: number, fallback: number): number {
   return Number.isFinite(value) && value >= 0 ? value : fallback
-}
-
-function stableEntries(value: Readonly<Record<string, string>> | undefined): string {
-  return JSON.stringify(Object.entries(value ?? {}).sort(([left], [right]) =>
-    left.localeCompare(right),
-  ))
 }
 
 export function SuperflagProvider({
@@ -65,7 +59,12 @@ export function SuperflagProvider({
   telemetryOptionsRef.current = telemetry
   const hostedOptions =
     typeof telemetry?.hosted === "object" ? telemetry.hosted : undefined
-  const hostedHeadersSignature = stableEntries(hostedOptions?.headers)
+  const hostedHeadersSignature = stableJsonSignature(hostedOptions?.headers)
+  const attributesSignature = stableJsonSignature(attributes)
+  const stableAttributes = useMemo(
+    () => (attributes ? { ...attributes } : undefined),
+    [attributesSignature],
+  )
   const allowedAttributesSignature = JSON.stringify(
     telemetry?.allowedAttributes ?? [],
   )
@@ -203,7 +202,7 @@ export function SuperflagProvider({
       retryMaxDelayMs,
       storage,
       targetingKey,
-      attributes,
+      attributes: stableAttributes,
       userId,
       onStateChange: setState,
       onReady: (info) => onReadyRef.current?.(info),
@@ -228,8 +227,8 @@ export function SuperflagProvider({
   ])
 
   useEffect(() => {
-    clientRef.current?.setContext({ targetingKey, attributes, userId })
-  }, [targetingKey, attributes, userId])
+    clientRef.current?.setContext({ targetingKey, attributes: stableAttributes, userId })
+  }, [targetingKey, stableAttributes, userId])
 
   useEffect(() => {
     if (!clientKey || !stableTelemetry) {
@@ -271,43 +270,25 @@ export function SuperflagProvider({
     }
   }, [clientKey, configUrl, stableTelemetry])
 
-  const evaluate = useMemo(() => {
-    if (!state.config) return defaultEvaluation
-    const evaluator = createEvaluator(state.config)
-    const evaluationContext = {
-      targetingKey: state.targetingKey ?? "",
-      ...(state.attributes ? { attributes: state.attributes } : {}),
-    }
-
-    return <T,>(
-      flagKey: string,
-      fallback?: T,
-    ): SuperflagEvaluationDetails<T | undefined> => {
-      const flag = state.config?.flags[flagKey]
-      const safeFallback =
-        fallback ??
-        (flag ? flag.variations[flag.offVariation]?.value : undefined)
-      if (safeFallback === undefined) return defaultEvaluation(flagKey, fallback)
-
-      const details = evaluator.evaluate(
-        flagKey as never,
-        evaluationContext,
-        safeFallback as never,
-      )
-      return {
-        ...details,
-        value: details.value as T,
+  const evaluate = useMemo(
+    () =>
+      createEvaluationReader({
+        config: state.config,
+        context: {
+          targetingKey: state.targetingKey ?? "",
+          ...(state.attributes ? { attributes: state.attributes } : {}),
+        },
         source: state.source,
         configVersion: state.configVersion,
-      }
-    }
-  }, [
-    state.config,
-    state.targetingKey,
-    state.attributes,
-    state.source,
-    state.configVersion,
-  ])
+      }),
+    [
+      state.config,
+      state.targetingKey,
+      state.attributes,
+      state.source,
+      state.configVersion,
+    ],
+  )
 
   const recordEvaluation = useCallback(
     (details: SuperflagEvaluationDetails<unknown>, exposed: boolean): void => {

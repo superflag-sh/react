@@ -101,7 +101,7 @@ describe("canonical browser telemetry", () => {
     expect(delivered[1]).toMatchObject({
       kind: "exposure",
       flagKey: "checkout",
-      sdk: { name: "@superflag-sh/react", version: "0.6.0", platform: "browser" },
+      sdk: { name: "@superflag-sh/react", version: "0.7.0", platform: "browser" },
       subject,
     })
     const serialized = JSON.stringify(delivered)

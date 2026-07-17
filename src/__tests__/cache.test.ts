@@ -7,7 +7,7 @@ import {
   createCacheScope,
   createPersistedCacheBinding,
   sha256,
-} from "../cache.js"
+} from "@superflag-sh/core"
 import { createClient } from "../client.js"
 import type { CachedConfig, StorageAdapter, SuperflagState } from "../types.js"
 import { SHA256_TEST_VECTORS } from "./cache-vectors.js"
@@ -203,6 +203,27 @@ describe("cache identity", () => {
     expect(storage.removed).toContain(cacheKey)
     expect(states.at(-1)?.appId).toBe("app-a")
     expect(JSON.parse(storage.values.get(cacheKey) ?? "{}").version).toBe(8)
+  })
+
+  test("rejects a cache whose nested config metadata conflicts with its envelope", async () => {
+    const clientKey = "pub_prod_nested-poison"
+    const storage = new TestStorage()
+    const keys = seedBoundCache(storage, clientKey)
+    const cached = JSON.parse(storage.values.get(keys.cacheKey) ?? "{}")
+    cached.config.source.app = "attacker"
+    storage.values.set(keys.cacheKey, JSON.stringify(cached))
+    const headers: Array<string | null> = []
+    globalThis.fetch = async (_input, init) => {
+      headers.push(new Headers(init?.headers).get("If-None-Match"))
+      return makeResponse("app-a", "prod", 8)
+    }
+
+    const { client, states } = createTestClient(clientKey, storage)
+    await client.initialize()
+
+    expect(headers).toEqual([null])
+    expect(storage.removed).toContain(keys.cacheKey)
+    expect(states.at(-1)).toMatchObject({ appId: "app-a", configVersion: 8 })
   })
 
   test("does not reuse cache across client keys or endpoints", async () => {

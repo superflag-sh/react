@@ -116,7 +116,9 @@ try {
       `if (value !== true) throw new Error("packed provider did not evaluate fetched config")\n` +
       `await Promise.resolve()\n` +
       `if (events.filter((event) => event.kind === "exposure").length !== 1 || exposures.length !== 1) throw new Error("provider init or bulk reads created false exposures")\n` +
+      `const readyClient = client\n` +
       `await act(async () => root.update(renderApp()))\n` +
+      `if (client !== readyClient) throw new Error("imperative client identity changed on an unrelated provider render")\n` +
       `const tracked = await client.track("checkout", "revenue", 3.5, { attributes: { plan: "pro", email: "raw-user@example.com" } })\n` +
       `if (tracked.status !== "queued") throw new Error("inline telemetry options reset exposure state")\n` +
       `const converted = await client.track("checkout", "converted")\n` +
@@ -137,15 +139,15 @@ try {
   verifyDeclarations("19", "19.2.0", "19.2.17")
 
   const manifest = JSON.parse(readFileSync(join(temp, "node_modules", "@superflag-sh", "react", "package.json"), "utf8"))
-  if (manifest.dependencies?.["@superflag-sh/core"] !== "^0.2.1") {
-    throw new Error("Published core dependency must remain ^0.2.1")
+  if (manifest.dependencies?.["@superflag-sh/core"] !== "0.4.0") {
+    throw new Error("Published core dependency must remain 0.4.0")
   }
   if (/\b(?:file|link):/.test(JSON.stringify(manifest.dependencies ?? {}))) {
     throw new Error("Published dependencies contain a local file/link locator")
   }
   console.log(`tarball: ${entries.length} files, source-only entries: 0`)
   console.log(`runtime imports: ESM and CommonJS ok (${manifest.name}@${manifest.version})`)
-  console.log("core dependency: ^0.2.1 manifest range, local packed resolution ok")
+  console.log("core dependency: 0.4.0 exact version, local packed resolution ok")
   console.log("packed React behavior: exposure privacy, offline fail-open, binary/numeric outcome allow-list ok")
   console.log("consumer declarations: React 18 and React 19 bundler TSX ok (skipLibCheck disabled)")
 } finally {

@@ -180,6 +180,11 @@ export interface SuperflagState {
   refresh: () => Promise<void>
 }
 
+export interface UseFlagsResult extends SuperflagState {
+  ready: boolean
+  loading: boolean
+}
+
 export interface SuperflagProviderProps {
   clientKey?: string
   configUrl?: string

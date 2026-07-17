@@ -6,6 +6,7 @@ import {
   runConformanceVectors,
 } from "@superflag-sh/core/conformance"
 import { dispatchEvaluationCallbacks } from "../callbacks.js"
+import { createEvaluationReader } from "../evaluation.js"
 
 describe("shared core evaluation", () => {
   test("passes every canonical conformance vector unchanged", () => {
@@ -39,6 +40,38 @@ describe("shared core evaluation", () => {
       value: true,
       reason: "DEFAULT",
       errorCode: "TYPE_MISMATCH",
+    })
+  })
+
+  test("projects core details through one evaluation reader Interface", () => {
+    const evaluate = createEvaluationReader({
+      config: conformanceConfig,
+      context: { targetingKey: "user-1", attributes: { plan: "pro" } },
+      source: "network",
+      configVersion: conformanceConfig.configVersion,
+    })
+
+    expect(evaluate("checkout", false)).toMatchObject({
+      flagKey: "checkout",
+      source: "network",
+      configVersion: conformanceConfig.configVersion,
+    })
+  })
+
+  test("reader owns fallback diagnostics before configuration is ready", () => {
+    const evaluate = createEvaluationReader({
+      config: null,
+      context: { targetingKey: "user-1" },
+      source: "default",
+      configVersion: null,
+    })
+
+    expect(evaluate("checkout", false)).toMatchObject({
+      value: false,
+      reason: "DEFAULT",
+      errorCode: "FLAG_NOT_FOUND",
+      source: "default",
+      configVersion: null,
     })
   })
 

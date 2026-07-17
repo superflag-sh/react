@@ -210,6 +210,9 @@ The returned `useClient()` hook provides typed imperative `getFlag`,
 - `ready`, `loading`, and the deduplicated async `refresh()` function
 - `appId` and `environment` for the validated cache identity
 
+The runtime result is intentionally limited to documented `SuperflagState` fields.
+Provider-private evaluation and telemetry methods are not exposed through `useFlags()`.
+
 `source: "default"` means no remote/cache config is currently being served. Safety-sensitive UI should gate on `ready` and may additionally reject `stale` data.
 
 ## Core config and legacy payloads
@@ -228,11 +231,11 @@ interface StorageAdapter {
 }
 ```
 
-The default adapter uses `localStorage` when available and otherwise falls back to session memory. Cache entries are schema-versioned and partitioned by endpoint plus a SHA-256 client-key fingerprint; raw client keys are never persisted. App/environment identity must match before an ETag or cached config can be reused.
+The default adapter uses `localStorage` when available and otherwise falls back to session memory. Cache entries are schema-versioned and partitioned by endpoint plus a SHA-256 client-key fingerprint; raw client keys are never persisted. App/environment identity must match before an ETag or cached config can be reused. A same-source response with a lower config version is rejected so delayed cache reads or network responses cannot replace the latest known config.
 
 ## Package targets
 
-The package ships browser ESM, CommonJS, and one declaration tree. Release checks run core conformance vectors, lifecycle/cache tests, type checking, the shared cache-drift gate, and packed-tarball ESM/CommonJS/NodeNext consumer smoke tests.
+The package ships browser ESM, CommonJS, and one declaration tree. Release checks run core conformance vectors, lifecycle/cache tests, type checking, and packed-tarball ESM/CommonJS/NodeNext consumer smoke tests. Portable cache identity comes from the shared `@superflag-sh/core/cache` module; this adapter owns browser persistence and lifecycle policy.
 
 ## License
 

@@ -25,13 +25,13 @@ import type {
   SuperflagTrackOptions,
   SuperflagTrackResult,
 } from "./types.js"
-import { sha256 } from "./cache.js"
+import { sha256 } from "@superflag-sh/core"
 
 const DEFAULT_BASE_URL = "https://superflag.sh"
 const EVENT_ROUTE = "/api/v1/events/batch"
 const MAX_HOSTED_BODY_BYTES = 250 * 1_024
 const SDK_NAME = "@superflag-sh/react"
-const SDK_VERSION = "0.6.0"
+const SDK_VERSION = "0.7.0"
 const sessionInstallationKeys = new Map<string, string>()
 type TelemetryAbortSignal = Parameters<TelemetryTransport["send"]>[1]["signal"]
 
