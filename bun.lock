@@ -19,7 +19,7 @@
     },
   },
   "packages": {
-    "@superflag-sh/core": ["@superflag-sh/core@0.4.0", "", { "peerDependencies": { "@openfeature/server-sdk": ">=1" }, "optionalPeers": ["@openfeature/server-sdk"] }, "sha512-I8FMOO0Hd9NOWZwVS6uoKtALOJU8fssym16pqwFIj/Hx30kzDlg25aMeaZhWTA0IU+iiI2zCLsH0j7/nxELI/g=="],
+    "@superflag-sh/core": ["@superflag-sh/core@0.4.0", "", { "peerDependencies": { "@openfeature/server-sdk": ">=1" }, "optionalPeers": ["@openfeature/server-sdk"] }, "sha512-M52/MjzE+hOP+qDrceDsX4085cf0QXwDDdUTln+Di2+wIGP7VRBTaaRZUzDW8hh9WhBT710OhYH/T+Fui4sC7Q=="],
 
     "@types/node": ["@types/node@25.0.3", "", { "dependencies": { "undici-types": "~7.16.0" } }, "sha512-W609buLVRVmeW693xKfzHeIV6nJGGz98uCPfeXI1ELMLXVeKYZ9m15fAMSaUPBHYLGFsVRcMmSCksQOrZV9BYA=="],
 
